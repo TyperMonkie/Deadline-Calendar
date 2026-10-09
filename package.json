@@ -1,0 +1,66 @@
+{
+  "name": "ddl-calendar",
+  "private": true,
+  "version": "0.1.6",
+  "description": "A local-first visual deadline calendar for Windows 11",
+  "author": "DDL Calendar",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "desktop:dev": "electron . --dev",
+    "desktop:build": "tsc -b && vite build && electron-builder --win nsis"
+  },
+  "dependencies": {
+    "date-fns": "^4.1.0",
+    "imapflow": "^2.2.6",
+    "lucide-react": "^0.468.0",
+    "mailparser": "^3.9.36",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.9.0",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/three": "^0.186.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "playwright-core": "^1.63.0",
+    "sm-crypto": "^0.5.7",
+    "typescript": "~5.7.2",
+    "vite": "^6.0.5"
+  },
+  "packageManager": "pnpm@11.19.0",
+  "build": {
+    "appId": "cn.ddlcalendar.app",
+    "productName": "DDL Calendar",
+    "artifactName": "DDL-Calendar-Setup-${version}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "src-tauri/icons/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DDL Calendar"
+    }
+  }
+}
