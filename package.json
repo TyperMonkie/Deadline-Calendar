@@ -1,7 +1,7 @@
 {
   "name": "ddl-calendar",
   "private": true,
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A local-first visual deadline calendar for Windows 11",
   "author": "DDL Calendar",
   "type": "module",

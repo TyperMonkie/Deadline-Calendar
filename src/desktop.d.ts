@@ -6,6 +6,7 @@ declare global {
 interface DesktopMailStatus {
   available: boolean;
   configured: boolean;
+  needsReconnect: boolean;
   username: string;
   initialized: boolean;
   lastUid: number | null;
@@ -18,6 +19,7 @@ interface MailConfigureResult {
   latestUid: number;
   messages: number;
   lastSyncedAt: string;
+  resumedFromExisting: boolean;
 }
 
 interface SyncedAssignment {

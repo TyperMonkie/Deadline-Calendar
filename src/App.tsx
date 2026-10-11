@@ -310,7 +310,7 @@ function App({ initialData }: { initialData: DesktopDataSnapshot | null }) {
     setMailStatus(status);
     if (!status.configured) {
       setSettingsOpen(true);
-      setToast("请先连接清华邮箱");
+      setToast(status.needsReconnect ? "请重新输入一次邮箱客户端专用密码，原同步进度会保留" : "请先连接清华邮箱");
       return;
     }
     setSyncState((state) => ({ ...state, status: "syncing" }));
@@ -365,7 +365,9 @@ function App({ initialData }: { initialData: DesktopDataSnapshot | null }) {
       setMailStatus(status);
       setMailForm((value) => ({ ...value, password: "" }));
       setSyncState((state) => ({ ...state, initialized: true, lastSyncedAt: result.lastSyncedAt, status: "success" }));
-      setToast(`邮箱连接成功，已从第 ${result.latestUid} 封邮件之后开始监听`);
+      setToast(result.resumedFromExisting
+        ? "邮箱连接已恢复，将从上次同步进度继续检查"
+        : `邮箱连接成功，已从第 ${result.latestUid} 封邮件之后开始监听`);
     } catch (error) {
       setMailError(error instanceof Error ? error.message : "连接失败，请检查账号和客户端专用密码");
     } finally {
@@ -495,11 +497,15 @@ function App({ initialData }: { initialData: DesktopDataSnapshot | null }) {
 
         <aside className="side-panel">
           <div className="side-card next-card">
-            <div className="side-card-title"><span>同步中心</span><span className={`status-badge ${mailStatus?.configured ? "connected" : "testing"}`}>{mailStatus?.configured ? "已连接" : "待连接"}</span></div>
+            <div className="side-card-title"><span>同步中心</span><span className={`status-badge ${mailStatus?.configured ? "connected" : "testing"}`}>{mailStatus?.configured ? "已连接" : mailStatus?.needsReconnect ? "需重连" : "待连接"}</span></div>
             <div className="sync-illustration"><MailCheck size={26} /><span className="sync-ring" /></div>
-            <h3>{mailStatus?.configured ? "清华邮箱已连接" : "连接邮箱以开始同步"}</h3>
-            <p>{mailStatus?.configured ? "只读取上次同步之后的新邮件，不回溯历史内容。" : "邮箱首次连接只建立同步起点，之后仅识别新邮件。"}</p>
-            <div className="sync-foot"><Inbox size={14} />不会扫描历史邮件</div>
+            <h3>{mailStatus?.configured ? "清华邮箱已连接" : mailStatus?.needsReconnect ? "邮箱凭据需要重新连接" : "连接邮箱以开始同步"}</h3>
+            <p>{mailStatus?.configured
+              ? "只读取上次同步之后的新邮件，不回溯历史内容。"
+              : mailStatus?.needsReconnect
+                ? "重新输入客户端专用密码后，会从原来的同步位置继续检查。"
+                : "邮箱首次连接只建立同步起点，之后仅识别新邮件。"}</p>
+            <div className="sync-foot"><Inbox size={14} />{mailStatus?.needsReconnect ? "同步起点已安全保留" : "不会扫描历史邮件"}</div>
           </div>
 
           <div className="side-card">
@@ -596,14 +602,15 @@ function App({ initialData }: { initialData: DesktopDataSnapshot | null }) {
                 <div className="connection-head">
                   <span className="connection-icon mail"><Mail size={19} /></span>
                   <div><h3>清华邮箱</h3><p>通过只读 IMAP 检查新作业通知</p></div>
-                  <span className={`connection-state ${mailStatus?.configured ? "ok" : ""}`}><span />{mailStatus?.configured ? "已连接" : "未连接"}</span>
+                  <span className={`connection-state ${mailStatus?.configured ? "ok" : ""}`}><span />{mailStatus?.configured ? "已连接" : mailStatus?.needsReconnect ? "需重新连接" : "未连接"}</span>
                 </div>
                 <div className="connection-form">
                   <label className="field"><span>邮箱账号</span><input value={mailForm.username} onChange={(event) => setMailForm({ ...mailForm, username: event.target.value })} placeholder="name@mails.tsinghua.edu.cn" /></label>
-                  <label className="field"><span>客户端专用密码</span><div className="input-with-icon"><KeyRound size={16} /><input type="password" value={mailForm.password} onChange={(event) => setMailForm({ ...mailForm, password: event.target.value })} placeholder={mailStatus?.configured ? "输入新密码可重新连接" : "在邮箱安全设置中生成"} /></div></label>
+                  <label className="field"><span>客户端专用密码</span><div className="input-with-icon"><KeyRound size={16} /><input type="password" value={mailForm.password} onChange={(event) => setMailForm({ ...mailForm, password: event.target.value })} placeholder={mailStatus?.configured || mailStatus?.needsReconnect ? "输入专用密码以重新连接" : "在邮箱安全设置中生成"} /></div></label>
+                  {mailStatus?.needsReconnect && <div className="form-error">旧凭据来自另一运行环境，当前 Windows 无法解密。同步起点和待处理邮件均已保留。</div>}
                   {mailError && <div className="form-error">{mailError}</div>}
                   <div className="security-note"><ShieldCheck size={15} /><span>专用密码使用 Windows DPAPI 加密，只保存在这台电脑中。</span></div>
-                  <button className="connect-button" disabled={mailSaving || !mailForm.username.trim() || !mailForm.password} onClick={configureMail}>{mailSaving ? <LoaderCircle className="spin" size={16} /> : <Wifi size={16} />}{mailSaving ? "正在验证" : mailStatus?.configured ? "重新连接" : "连接并建立同步起点"}</button>
+                  <button className="connect-button" disabled={mailSaving || !mailForm.username.trim() || !mailForm.password} onClick={configureMail}>{mailSaving ? <LoaderCircle className="spin" size={16} /> : <Wifi size={16} />}{mailSaving ? "正在验证" : mailStatus?.needsReconnect ? "重新连接并保留进度" : mailStatus?.configured ? "重新连接" : "连接并建立同步起点"}</button>
                 </div>
               </section>
 

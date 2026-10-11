@@ -49,6 +49,10 @@ const dataStore = createDataStore(persistentDataDirectory, {
 
 function migratePersistentFile(fileName) {
   const destination = path.join(persistentDataDirectory, fileName);
+  // The fixed home-directory copy is authoritative once it exists. Legacy
+  // AppData copies may have been encrypted inside another Windows app
+  // container and cannot necessarily be decrypted by the installed app.
+  if (fsSync.existsSync(destination)) return destination;
   const candidates = [persistentDataDirectory, ...uniqueLegacyDataDirectories]
     .map((directory) => path.join(directory, fileName))
     .filter((candidate) => fsSync.existsSync(candidate));
@@ -163,9 +167,20 @@ function readMailConfigSync() {
 }
 
 function mailStatusFromConfig(config) {
+  const hasStoredCredential = Boolean(config?.encryptedPassword && config?.username);
+  let credentialReadable = false;
+  if (hasStoredCredential && safeStorage.isEncryptionAvailable()) {
+    try {
+      decryptPassword(config);
+      credentialReadable = true;
+    } catch {
+      credentialReadable = false;
+    }
+  }
   return {
     available: safeStorage.isEncryptionAvailable(),
-    configured: Boolean(config?.encryptedPassword && config?.username),
+    configured: hasStoredCredential && credentialReadable,
+    needsReconnect: hasStoredCredential && !credentialReadable,
     username: config?.username ?? "",
     initialized: Boolean(config?.initialized),
     lastUid: config?.lastUid ?? null,
@@ -182,7 +197,11 @@ function decryptPassword(config) {
   if (!safeStorage.isEncryptionAvailable()) {
     throw new Error("Windows 凭据加密当前不可用");
   }
-  return safeStorage.decryptString(Buffer.from(config.encryptedPassword, "base64"));
+  try {
+    return safeStorage.decryptString(Buffer.from(config.encryptedPassword, "base64"));
+  } catch {
+    throw new Error("邮箱登录凭据无法由当前 Windows 会话解密，请在同步设置中重新输入一次客户端专用密码；原有同步进度会保留");
+  }
 }
 
 function createImapClient(username, password) {
@@ -616,7 +635,14 @@ ipcMain.handle("mail:configure", async (_event, input) => {
   if (!username || !password) throw new Error("请填写邮箱账号和客户端专用密码");
   if (!safeStorage.isEncryptionAvailable()) throw new Error("Windows 凭据加密当前不可用");
 
-  const baseline = await withMailbox(username, password, async (client) => {
+  const previousConfig = await readMailConfig();
+  const sameAccount = Boolean(
+    previousConfig?.initialized
+    && previousConfig?.username
+    && String(previousConfig.username).trim().toLocaleLowerCase() === username.toLocaleLowerCase()
+    && Number.isFinite(Number(previousConfig.lastUid)),
+  );
+  const mailboxState = await withMailbox(username, password, async (client) => {
     const uids = await client.search({ all: true }, { uid: true });
     return {
       latestUid: latestUid(uids),
@@ -624,16 +650,31 @@ ipcMain.handle("mail:configure", async (_event, input) => {
     };
   });
 
+  const encryptedPassword = safeStorage.encryptString(password).toString("base64");
+  try {
+    safeStorage.decryptString(Buffer.from(encryptedPassword, "base64"));
+  } catch {
+    throw new Error("Windows 无法持久保存邮箱凭据，请重新启动应用后再试");
+  }
+  const now = new Date().toISOString();
   const config = {
     username,
-    encryptedPassword: safeStorage.encryptString(password).toString("base64"),
+    encryptedPassword,
     initialized: true,
-    lastUid: baseline.latestUid,
-    lastSyncedAt: new Date().toISOString(),
-    pendingAssignments: [],
+    lastUid: sameAccount ? Number(previousConfig.lastUid) : mailboxState.latestUid,
+    lastSyncedAt: sameAccount ? (previousConfig.lastSyncedAt ?? now) : now,
+    pendingAssignments: sameAccount ? (previousConfig.pendingAssignments ?? []) : [],
+    savedAt: now,
   };
   await writeMailConfig(config);
-  return { configured: true, initialized: true, ...baseline, lastSyncedAt: config.lastSyncedAt };
+  return {
+    configured: true,
+    initialized: true,
+    latestUid: config.lastUid,
+    messages: mailboxState.messages,
+    lastSyncedAt: config.lastSyncedAt,
+    resumedFromExisting: sameAccount,
+  };
 });
 
 ipcMain.handle("mail:sync", async () => {
